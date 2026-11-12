@@ -4,7 +4,7 @@
       "R0"
     ],
     "Date :": [
-      "11.11.2026"
+      "12.11.2026"
     ],
     "Description :": [
       "FOR APPROVAL"
@@ -33,5 +33,21 @@
     "REFERENCE VENDOR DOCUMENT NO :": "-NIL-",
     "CUSTOMER PROJECT CODE :": "-NIL-"
   },
-  "pages": []
+  "pages": [
+    {
+      "Panel Name": "",
+      "Starting Node": "0",
+      "Ending Node": "1"
+    },
+    {
+      "Panel Name": "",
+      "Starting Node": "32",
+      "Ending Node": "32"
+    },
+    {
+      "Panel Name": "",
+      "Starting Node": "1",
+      "Ending Node": "1"
+    }
+  ]
 }

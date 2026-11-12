@@ -17,6 +17,9 @@ from datetime import date
 from tkinter import messagebox
 
 MAX_PAGES = 10
+MIN_NODE = 0                                                                 # <<< CHANGE 2: node limits
+MAX_NODE = 32                                                                # <<< CHANGE 2
+DEFAULT_NODE = "1"                                                           # <<< CHANGE 2: start value of both node boxes
 PAGES_DATA = []
 PAGE_SIZE = "760x600"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -330,8 +333,9 @@ def Interface_04():
     def snapshot():
         """Current values typed in the rows ('' if a box still shows its placeholder)."""
         return [{"Panel Name":    _get_entry_value(n),
-                 "Starting Node": _get_entry_value(s),
-                 "Ending Node":   _get_entry_value(e)} for n, s, e in rows]
+                 "Starting Node": _get_entry_value(s) or DEFAULT_NODE,   # <<< CHANGE 2: empty -> 1
+                 "Ending Node":   _get_entry_value(e) or DEFAULT_NODE}   # <<< CHANGE 2: empty -> 1
+                for n, s, e in rows]                                     # <<< CHANGE 1: Cluster removed
 
     def save_pages():
         PAGES_DATA[:] = snapshot()
@@ -344,7 +348,7 @@ def Interface_04():
 
     # Callback to close Interface_04 and launch Interface_05
     def open_interface_05():
-        for k, (n, s, e) in enumerate(rows, start=1):
+        for k, (n, s, e) in enumerate(rows, start=1):                    # <<< CHANGE 1: Cluster removed
             if not row_ok(s, e):
                 mark(s, e)
                 messagebox.showwarning(
@@ -358,8 +362,27 @@ def Interface_04():
         root.destroy()
         Interface_05().mainloop()
 
-    def only_digits(proposed):
-        return proposed == "" or (proposed.isascii() and proposed.isdigit())
+    def node_ok(proposed):                                               # <<< CHANGE 2: replaces only_digits
+        """Digits only, at most 2 characters, value between MIN_NODE and MAX_NODE."""
+        if proposed == "":
+            return True                                                  # allow clearing while typing
+        return (proposed.isascii() and proposed.isdigit() and len(proposed) <= 2
+                and MIN_NODE <= int(proposed) <= MAX_NODE)
+
+    vcmd = (root.register(node_ok), "%P")                                # <<< CHANGE 2: registered once
+
+    def node_box(row, column, saved_value):                              # <<< CHANGE 2: node entry starting at 1
+        """Entry for a node number. Starts at 1; an empty box goes back to 1 when left."""
+        box = tk.Entry(rows_frame, font=("Segoe UI", 10), width=8, justify="center",
+                       validate="key", validatecommand=vcmd)
+        box.insert(0, saved_value or DEFAULT_NODE)
+        box.grid(row=row, column=column, padx=(0, 10), pady=3)
+
+        def on_leave(_event):
+            if not box.get().strip():
+                box.insert(0, DEFAULT_NODE)
+        box.bind("<FocusOut>", on_leave, add="+")
+        return box
 
     def rebuild(saved=None):
         """Draw one row per page and refill what was typed before."""
@@ -367,10 +390,11 @@ def Interface_04():
         for child in rows_frame.winfo_children():
             child.destroy()
         rows.clear()
-        vcmd = (root.register(only_digits), "%P")
         font = ("Segoe UI", 10)
 
         for k in range(int(pages_var.get())):
+            saved_row = old[k] if k < len(old) else {}                   # <<< CHANGE 2: values typed before
+
             tk.Label(rows_frame, text=f"Panel Name {k + 1} :", font=font, anchor="w"
                      ).grid(row=k, column=0, sticky="w", padx=(10, 3), pady=3)
             n = tk.Entry(rows_frame, font=font, width=20)
@@ -379,28 +403,19 @@ def Interface_04():
 
             tk.Label(rows_frame, text=f"Starting Node {k + 1} :", font=font, anchor="w"
                      ).grid(row=k, column=2, sticky="w", padx=(0, 3), pady=3)
-            s = tk.Entry(rows_frame, font=font, width=8,
-                         validate="key", validatecommand=vcmd)
-            _add_placeholder(s, "Numbers only")
-            s.grid(row=k, column=3, padx=(0, 10), pady=3)
+            s = node_box(k, 3, saved_row.get("Starting Node"))           # <<< CHANGE 2: starts at 1, limit 0-32
 
             tk.Label(rows_frame, text=f"Ending Node {k + 1} :", font=font, anchor="w"
                      ).grid(row=k, column=4, sticky="w", padx=(0, 3), pady=3)
-            e = tk.Entry(rows_frame, font=font, width=8,
-                         validate="key", validatecommand=vcmd)
-            _add_placeholder(e, "Numbers only")
-            e.grid(row=k, column=5, padx=(0, 10), pady=3)
+            e = node_box(k, 5, saved_row.get("Ending Node"))             # <<< CHANGE 2: starts at 1, limit 0-32
 
             for box in (s, e):
                 box.bind("<KeyRelease>", lambda ev, s=s, e=e: mark(s, e), add="+")
                 box.bind("<FocusOut>",   lambda ev, s=s, e=e: mark(s, e), add="+")
 
-            if k < len(old):                      # keep what was typed before
-                _set_entry_value(n, old[k]["Panel Name"])
-                _set_entry_value(s, old[k]["Starting Node"])
-                _set_entry_value(e, old[k]["Ending Node"])
+            _set_entry_value(n, saved_row.get("Panel Name", ""))         # keep what was typed before
             mark(s, e)
-            rows.append((n, s, e))
+            rows.append((n, s, e))                                       # <<< CHANGE 1: Cluster removed, 3 boxes again
 
     container = tk.Frame(root)
     container.pack(side="top", pady=(20, 0))

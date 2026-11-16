@@ -9,7 +9,7 @@ from tkinter import ttk
 from tkcalendar import DateEntry 
 #from typing import IO
 from lib_GUI import _page, _label, _add_placeholder, _get_entry_value, JCNoEntry
-import json                                                                  # <<< CHANGE 3
+import json
 from lib_GUI import (_page, _label, _add_placeholder, _get_entry_value,
                      _set_entry_value, JCNoEntry, _nav_buttons)
 import re
@@ -17,9 +17,10 @@ from datetime import date
 from tkinter import messagebox
 
 MAX_PAGES = 10
-MIN_NODE = 0                                                                 # <<< CHANGE 2: node limits
-MAX_NODE = 32                                                                # <<< CHANGE 2
-DEFAULT_NODE = "1"                                                           # <<< CHANGE 2: start value of both node boxes
+MIN_NODE = 0
+MAX_NODE = 32
+MAX_CLUSTERS = 7
+DEFAULT_NODE = "1"
 PAGES_DATA = []
 PAGE_SIZE = "760x600"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -211,7 +212,7 @@ def Interface_02():
 
     def open_interface_03():
         if revision_count() == 0:
-            on_add()                                        # nothing added yet: use the form
+            on_add()
         root.destroy()
         Interface_03().mainloop()
 
@@ -231,7 +232,7 @@ def Interface_02():
 
         if label_text == "Date :":
             entry = DateEntry(container, width=43,
-                              date_pattern="dd.mm.yyyy")    # <<< CHANGE 4: 14.01.2026 style
+                              date_pattern="dd.mm.yyyy")
         elif label_text == "Description :":
             entry = ttk.Combobox(container, values=DESCRIPTION_OPTIONS,
                                  font=("Segoe UI", 10), width=43, state="readonly")
@@ -263,7 +264,7 @@ def Interface_02():
     # Navigation
     _nav_buttons(root, open_interface_01, open_interface_03)
 
-    refresh_table()          # shows existing revisions when you come back with <prev
+    refresh_table()
     reset_form()
     return root
 
@@ -441,29 +442,192 @@ def Interface_04():
     _nav_buttons(root, open_interface_03, open_interface_05)
     return root
 
-def Interface_05():
-    root = _page("Interface_05", PAGE_SIZE, False, False)
 
-    # Callback to close Interface_05 and launch Interface_04
-    def open_interface_04():
+def Interface_05(panel_index=0):
+    """One page per panel (PAGES_DATA[panel_index]): a Node line for every node
+    from Starting Node to Ending Node, each with 0..MAX_CLUSTERS cluster lines."""
+    root = _page("NodeDetails", PAGE_SIZE, False, False)
+    panel = PAGES_DATA[panel_index]
+    first, last = int(panel["Starting Node"]), int(panel["Ending Node"])
+    saved_nodes = panel.get("Nodes", [])
+    if len(saved_nodes) != last - first + 1:
+        saved_nodes = []                       # node range changed: start fresh
+    font = ("Segoe UI", 10)
+    node_rows = []                             # one dict per node line
+
+    # ---- validation ----------------------------------------------------
+    def slot_ok(proposed):
+        """Digits only, at most 3 characters."""
+        return proposed == "" or (proposed.isascii() and proposed.isdigit()
+                                  and len(proposed) <= 3)
+    vcmd = (root.register(slot_ok), "%P")
+
+    def range_ok(s, e):
+        sv, ev = s.get(), e.get()
+        return sv == "" or ev == "" or int(ev) >= int(sv)
+
+    def mark(s, e):
+        e.config(bg="white" if range_ok(s, e) else "#ffb3b3")
+
+    def slot_box(parent, value):
+        box = tk.Entry(parent, font=font, width=5, justify="center",
+                       validate="key", validatecommand=vcmd)
+        box.insert(0, value)
+        box.bind("<FocusOut>",
+                 lambda ev, b=box: b.insert(0, DEFAULT_NODE) if not b.get().strip() else None,
+                 add="+")
+        return box
+
+    def name_box(parent, value, width):
+        box = tk.Entry(parent, font=font, width=width, justify="center",
+                       readonlybackground="white")
+        box.insert(0, value)
+        box.config(state="readonly")           # names follow the N01 / N01C01 pattern
+        return box
+
+    def link_range(s, e):
+        for b in (s, e):
+            b.bind("<KeyRelease>", lambda ev, s=s, e=e: mark(s, e), add="+")
+            b.bind("<FocusOut>",   lambda ev, s=s, e=e: mark(s, e), add="+")
+        mark(s, e)
+
+    # ---- one node line (+ its cluster lines) --------------------------------
+    def add_node(node_no, saved):
+        name = f"N{node_no:02d}"
+        frame = tk.Frame(body)
+        frame.pack(anchor="w", pady=2)
+        main = tk.Frame(frame)
+        main.pack(anchor="w")
+        cl_frame = tk.Frame(frame)             # cluster lines are drawn here
+        cl_frame.pack(anchor="w")
+
+        tk.Label(main, text="Node:", font=font).pack(side="left")
+        name_box(main, name, 7).pack(side="left", padx=(3, 12))
+        tk.Label(main, text="Starting Slot:", font=font).pack(side="left")
+        s = slot_box(main, saved.get("Starting Slot", DEFAULT_NODE))
+        s.pack(side="left", padx=(3, 12))
+        tk.Label(main, text="Ending Slot:", font=font).pack(side="left")
+        e = slot_box(main, saved.get("Ending Slot", DEFAULT_NODE))
+        e.pack(side="left", padx=(3, 12))
+        link_range(s, e)
+
+        saved_cl = saved.get("Clusters", [])
+        ncl_var = tk.StringVar(value=str(len(saved_cl)))            # initially 0
+        tk.Label(main, text="No of Cl.:", font=font).pack(side="left")
+        tk.Spinbox(main, from_=0, to=MAX_CLUSTERS, width=4, textvariable=ncl_var,
+                   state="readonly", justify="center", font=font).pack(side="left", padx=3)
+
+        row = {"name": name, "s": s, "e": e, "ncl": ncl_var, "clusters": []}
+        node_rows.append(row)
+
+        def make_cluster_line(i):
+            """Build cluster line i once (parent = cl_frame); it is only shown/hidden later."""
+            old = saved_cl[i] if i < len(saved_cl) else {}
+            cname = f"{name}C{i + 1:02d}"
+            line = tk.Frame(cl_frame)
+            tk.Label(line, text=f"Node: {name}", font=font, width=11, anchor="w"
+                     ).pack(side="left", padx=(0, 4))
+            tk.Label(line, text="Cluster:", font=font).pack(side="left")
+            name_box(line, cname, 9).pack(side="left", padx=(3, 12))
+            tk.Label(line, text="Starting Slot:", font=font).pack(side="left")
+            cs = slot_box(line, old.get("Starting Slot", DEFAULT_NODE))
+            cs.pack(side="left", padx=(3, 12))
+            tk.Label(line, text="Ending Slot:", font=font).pack(side="left")
+            ce = slot_box(line, old.get("Ending Slot", DEFAULT_NODE))
+            ce.pack(side="left", padx=(3, 12))
+            link_range(cs, ce)
+            return {"name": cname, "line": line, "s": cs, "e": ce}
+
+        def draw_clusters(*_):
+            """Show exactly 'No of Cl.' cluster lines; values typed earlier are kept."""
+            n = int(ncl_var.get())
+            while len(row["clusters"]) < n:
+                row["clusters"].append(make_cluster_line(len(row["clusters"])))
+            for i, c in enumerate(row["clusters"]):
+                if i < n:
+                    c["line"].pack(anchor="w", pady=1)   # no-op if already shown
+                else:
+                    c["line"].pack_forget()
+
+        ncl_var.trace_add("write", draw_clusters)
+        draw_clusters()
+
+    # ---- layout ---------------------------------------------------------------
+    tk.Label(root, text=f"Panel Name {panel_index + 1}: {panel['Panel Name'] or '-'}",
+             font=("Segoe UI", 12, "bold"), anchor="center").pack(side="top", pady=(20, 8))
+
+    area = tk.Frame(root, height=430, width=700)
+    area.pack(side="top")
+    area.pack_propagate(False)
+    canvas = tk.Canvas(area, highlightthickness=0)
+    sb = ttk.Scrollbar(area, orient="vertical", command=canvas.yview)
+    body = tk.Frame(canvas)
+    body.bind("<Configure>", lambda ev: canvas.configure(scrollregion=canvas.bbox("all")))
+    canvas.create_window((0, 0), window=body, anchor="nw")
+    canvas.configure(yscrollcommand=sb.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    sb.pack(side="right", fill="y")
+    canvas.bind("<Enter>", lambda ev: canvas.bind_all(
+        "<MouseWheel>", lambda w: canvas.yview_scroll(int(-w.delta / 120), "units")))
+    canvas.bind("<Leave>", lambda ev: canvas.unbind_all("<MouseWheel>"))
+
+    for k, node_no in enumerate(range(first, last + 1)):
+        add_node(node_no, saved_nodes[k] if k < len(saved_nodes) else {})
+
+    # ---- save / navigation -------------------------------------------------------
+    def collect():
+        return [{"Node": r["name"],
+                 "Starting Slot": r["s"].get() or DEFAULT_NODE,
+                 "Ending Slot":   r["e"].get() or DEFAULT_NODE,
+                 "No of Cl.":     int(r["ncl"].get()),
+                 "Clusters": [{"Cluster": c["name"],
+                               "Starting Slot": c["s"].get() or DEFAULT_NODE,
+                               "Ending Slot":   c["e"].get() or DEFAULT_NODE}
+                              for c in r["clusters"][:int(r["ncl"].get())]]}
+                for r in node_rows]
+
+    def save():
+        panel["Nodes"] = collect()
+        save_to_file()
+
+    def first_bad_range():
+        for r in node_rows:
+            if not range_ok(r["s"], r["e"]):
+                return r["e"], r["name"]
+            for c in r["clusters"][:int(r["ncl"].get())]:
+                if not range_ok(c["s"], c["e"]):
+                    return c["e"], c["name"]
+        return None
+
+    def go_prev():
+        save()
         root.destroy()
-        Interface_04().mainloop()
+        if panel_index == 0:
+            Interface_04().mainloop()
+        else:
+            Interface_05(panel_index - 1).mainloop()
 
-    # Callback to close Interface_05 and launch Interface_06
-    def open_interface_06():
+    def go_next():
+        bad = first_bad_range()
+        if bad:
+            box, where = bad
+            messagebox.showwarning("Slot range",
+                                   f"{where}: Ending Slot must be greater than or equal "
+                                   f"to Starting Slot.")
+            box.focus_set()
+            return                              # stay on this page
+        save()
         root.destroy()
-        Interface_06().mainloop()
+        if panel_index + 1 < len(PAGES_DATA):
+            Interface_05(panel_index + 1).mainloop()
+        else:
+            Interface_06().mainloop()
 
-    container = tk.Frame(root)
-    container.pack(side="top", pady=(20, 0))
-
-    # Main Title
-    tk.Label(container, text="Details of the Document",
-             font=("Segoe UI", 12, "bold"), anchor="center"
-             ).grid(row=0, column=0, pady=10)
-
-    _nav_buttons(root, open_interface_04, open_interface_06)
+    _nav_buttons(root, go_prev, go_next)
     return root
+
+
+
 
 def Interface_06():
     root = _page("Interface_06", PAGE_SIZE, False, False)

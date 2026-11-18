@@ -16,6 +16,8 @@ import re
 from datetime import date
 from tkinter import messagebox
 
+MIN_SLOT = 1
+MAX_SLOT = 12
 MAX_PAGES = 10
 MIN_NODE = 0
 MAX_NODE = 32
@@ -457,9 +459,12 @@ def Interface_05(panel_index=0):
 
     # ---- validation ----------------------------------------------------
     def slot_ok(proposed):
-        """Digits only, at most 3 characters."""
-        return proposed == "" or (proposed.isascii() and proposed.isdigit()
-                                  and len(proposed) <= 3)
+        """Digits only, no leading zero, value between MIN_SLOT and MAX_SLOT."""
+        if proposed == "":
+            return True                                # allow clearing while typing
+        return (proposed.isascii() and proposed.isdigit() and not proposed.startswith("0")
+            and len(proposed) <= len(str(MAX_SLOT))
+            and MIN_SLOT <= int(proposed) <= MAX_SLOT)
     vcmd = (root.register(slot_ok), "%P")
 
     def range_ok(s, e):
@@ -472,10 +477,20 @@ def Interface_05(panel_index=0):
     def slot_box(parent, value):
         box = tk.Entry(parent, font=font, width=5, justify="center",
                        validate="key", validatecommand=vcmd)
+        if str(value).isdigit():
+            value = str(min(max(int(value), MIN_SLOT), MAX_SLOT))
         box.insert(0, value)
         box.bind("<FocusOut>",
                  lambda ev, b=box: b.insert(0, DEFAULT_NODE) if not b.get().strip() else None,
                  add="+")
+        return box
+
+    def start_box(parent):
+        """Starting Slot is always 1: shown in a read-only box."""
+        box = tk.Entry(parent, font=font, width=5, justify="center",
+                       readonlybackground="white")
+        box.insert(0, str(MIN_SLOT))
+        box.config(state="readonly")
         return box
 
     def name_box(parent, value, width):
@@ -504,7 +519,7 @@ def Interface_05(panel_index=0):
         tk.Label(main, text="Node:", font=font).pack(side="left")
         name_box(main, name, 7).pack(side="left", padx=(3, 12))
         tk.Label(main, text="Starting Slot:", font=font).pack(side="left")
-        s = slot_box(main, saved.get("Starting Slot", DEFAULT_NODE))
+        s = start_box(main)
         s.pack(side="left", padx=(3, 12))
         tk.Label(main, text="Ending Slot:", font=font).pack(side="left")
         e = slot_box(main, saved.get("Ending Slot", DEFAULT_NODE))
@@ -530,7 +545,7 @@ def Interface_05(panel_index=0):
             tk.Label(line, text="Cluster:", font=font).pack(side="left")
             name_box(line, cname, 9).pack(side="left", padx=(3, 12))
             tk.Label(line, text="Starting Slot:", font=font).pack(side="left")
-            cs = slot_box(line, old.get("Starting Slot", DEFAULT_NODE))
+            cs = start_box(line)
             cs.pack(side="left", padx=(3, 12))
             tk.Label(line, text="Ending Slot:", font=font).pack(side="left")
             ce = slot_box(line, old.get("Ending Slot", DEFAULT_NODE))
